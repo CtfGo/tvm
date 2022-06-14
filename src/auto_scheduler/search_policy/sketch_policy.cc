@@ -80,6 +80,7 @@ SketchPolicy::SketchPolicy(SearchTask task, CostModel program_cost_model,
   node->verbose = verbose;
   node->sample_init_min_pop_ =
       GetIntParam(node->params, SketchParamKey::SampleInitPopulation::min_population);
+  auto ablated_rules = GetIterNameSetParam(node->params, SketchParamKey::ablated_rule_names);
 
   if (init_search_callbacks) {
     PrintTitle("Call init-search callbacks", verbose);
@@ -151,6 +152,49 @@ SketchPolicy::SketchPolicy(SearchTask task, CostModel program_cost_model,
     node->mutation_rules.push_back(std::make_shared<MutateAutoUnroll>(0.10));
   } else {
     LOG(FATAL) << "No default sketch rules for target: " << task->target;
+  }
+
+  // ablating specified rules to measure their impacts
+  int vp = 0;
+  for (auto* rule : node->sketch_rules) {
+      if (ablated_rules.count(rule->GetRuleName())) {
+          StdCout(verbose) << "Albating sketch rule: " << rule->GetRuleName() << std::endl;
+      } else {
+          node->sketch_rules[vp++] = rule;
+          StdCout(verbose) << "Enable sketch rule: " << rule->GetRuleName() << std::endl;
+      }
+  }
+  if (vp < node->sketch_rules.size()) {
+      node->sketch_rules.erase(node->sketch_rules.begin() + vp, node->sketch_rules.end());
+      StdCout(verbose) << "Sketch rule size: " << node->sketch_rules.size();
+  }
+
+  vp = 0;
+  for (auto* rule : node->init_rules) {
+      if (ablated_rules.count(rule->GetRuleName())) {
+          StdCout(verbose) << "Albating init rule: " << rule->GetRuleName() << std::endl;
+      } else {
+          node->init_rules[vp++] = rule;
+          StdCout(verbose) << "Enable init rule: " << rule->GetRuleName() << std::endl;
+      }
+  }
+  if (vp < node->init_rules.size()) {
+      node->init_rules.erase(node->init_rules.begin() + vp, node->init_rules.end());
+      StdCout(verbose) << "Init rule size: " << node->init_rules.size();
+  }
+
+  vp = 0;
+  for (auto rule : node->mutation_rules) {
+      if (ablated_rules.count(rule->GetRuleName())) {
+          StdCout(verbose) << "Albating mutation rule: " << rule->GetRuleName() << std::endl;
+      } else {
+          node->mutation_rules[vp++] = rule;
+          StdCout(verbose) << "Enable mutation rule: " << rule->GetRuleName() << std::endl;
+      }
+  }
+  if (vp < node->mutation_rules.size()) {
+      node->mutation_rules.erase(node->mutation_rules.begin() + vp, node->mutation_rules.end());
+      StdCout(verbose) << "Mutation rule size: " << node->mutation_rules.size();
   }
 
   data_ = std::move(node);

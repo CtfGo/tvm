@@ -171,6 +171,11 @@ class PopulationGenerationRule {
    */
   virtual ResultKind Apply(SketchPolicyNode* policy, State* state,
                            std::mt19937* rand_gen) const = 0;
+  /*!
+   * \brief Get the name of this rule.
+   * \return A string of the rule name.
+   */
+  virtual std::string GetRuleName() const = 0;
 
   /*! \brief The deconstructor */
   virtual ~PopulationGenerationRule() = default;
@@ -181,6 +186,7 @@ class PopulationGenerationRule {
   class rule_name : public PopulationGenerationRule {                                             \
    public:                                                                                        \
     ResultKind Apply(SketchPolicyNode* policy, State* state, std::mt19937* rand_gen) const final; \
+    std::string GetRuleName() const final { return #rule_name; }                                  \
   };
 
 /*! \brief The rule that fills the incomplete SplitSteps. */
@@ -223,6 +229,7 @@ class PopulationMutationRule : public PopulationGenerationRule {
    public:                                                                                        \
     explicit rule_name(double weight) : PopulationMutationRule(weight) {}                         \
     ResultKind Apply(SketchPolicyNode* policy, State* state, std::mt19937* rand_gen) const final; \
+    std::string GetRuleName() const final { return #rule_name; }                                  \
   };
 
 /*! \brief The rule that mutates tile size by randomly dividing a tile size by a factor

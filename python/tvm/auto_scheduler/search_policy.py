@@ -191,6 +191,7 @@ class SketchPolicy(SearchPolicy):
         "max_innermost_split_factor": 64,
         "max_vectorize_size": 16,
         "disable_change_compute_location": 0,
+        "ablated_rule_names" : ["RuleCrossThreadReduction", "MutateAutoUnroll"],
     }
 
     def __init__(
