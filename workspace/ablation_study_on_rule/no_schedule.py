@@ -197,11 +197,11 @@ log_file = os.path.join(args.tuned_dir, log_name)
 # Extract tasks from the network
 print("Extract tasks...")
 mod, params, input_shape, output_shape = get_network(network, batch_size, layout, dtype=dtype)
-tasks, task_weights = auto_scheduler.extract_tasks(mod["main"], params, target)
-
-for idx, task in enumerate(tasks):
-    print("========== Task %d  (workload key: %s) ==========" % (idx, task.workload_key))
-    print(task.compute_dag)
+#tasks, task_weights = auto_scheduler.extract_tasks(mod["main"], params, target)
+#
+#for idx, task in enumerate(tasks):
+#    print("========== Task %d  (workload key: %s) ==========" % (idx, task.workload_key))
+#    print(task.compute_dag)
 
 #################################################################
 # Begin Tuning
@@ -245,7 +245,7 @@ def run_tuning():
 # We do not run the tuning in our webpage server since it takes too long.
 # Uncomment the following line to run it by yourself.
 
-run_tuning()
+#run_tuning()
 
 
 ######################################################################
@@ -321,9 +321,8 @@ run_tuning()
 
 # Compile with the history best
 print("Compile...")
-with auto_scheduler.ApplyHistoryBest(log_file):
-    with tvm.transform.PassContext(opt_level=3, config={"relay.backend.use_auto_scheduler": True}):
-        lib = relay.build(mod, target=target, params=params)
+with tvm.transform.PassContext(opt_level=3, config={"relay.backend.use_auto_scheduler": True}):
+    lib = relay.build(mod, target=target, params=params)
 
 # Create graph executor
 dev = tvm.device(str(target), args.device_id)

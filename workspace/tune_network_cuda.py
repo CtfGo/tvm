@@ -50,50 +50,6 @@ import tvm
 from tvm import relay, auto_scheduler
 import tvm.relay.testing
 from tvm.contrib import graph_executor
-import argparse
-import os
-
-#################################################################
-# Parse arguments
-
-def parse_args():
-    parser = argparse.ArgumentParser("Tuning arguments")
-    parser.add_argument(
-        '-b',
-        '--batch_size',
-        type=int,
-        default=16,
-        help='batch size')
-    parser.add_argument(
-        '-d',
-        '--device_id',
-        type=int,
-        default=7,
-        help='device id to be used'
-    )
-    parser.add_argument(
-        '-n',
-        '--num_measure_trials',
-        type=int,
-        default=300,
-        help='number of trials to be measured'
-    )
-    parser.add_argument(
-        '--tuned_dir',
-        default='./result',
-        help='dirname of tuned result stored'
-    )
-    parser.add_argument(
-        '-e',
-        '--ablated_rules',
-        action='append',
-        default=[],
-        help='names of rules to be ablated')
-    args = parser.parse_args()
-    return args
-
-args = parse_args()
-print("Arguments: %s" % args)
 
 #################################################################
 # Define a Network
@@ -176,12 +132,11 @@ def get_network(name, batch_size, layout="NHWC", dtype="float32"):
 
 # Define the neural network and compilation target
 network = "resnet-50"
-batch_size = args.batch_size
+batch_size = 1
 layout = "NHWC"
 target = tvm.target.Target("cuda")
 dtype = "float32"
-log_name = "%s-%s-B%d-%s.disable-%s.json" % (network, layout, batch_size, target.kind.name, '_'.join(args.ablated_rules))
-log_file = os.path.join(args.tuned_dir, log_name)
+log_file = "%s-%s-B%d-%s.json" % (network, layout, batch_size, target.kind.name)
 
 #################################################################
 # Extract Search Tasks
@@ -230,16 +185,16 @@ for idx, task in enumerate(tasks):
 
 def run_tuning():
     print("Begin tuning...")
-    measure_ctx = auto_scheduler.LocalRPCMeasureContext(n_parallel=2, repeat=1, min_repeat_ms=300, timeout=10, device=args.device_id)
+    measure_ctx = auto_scheduler.LocalRPCMeasureContext(repeat=1, min_repeat_ms=300, timeout=10)
 
     tuner = auto_scheduler.TaskScheduler(tasks, task_weights)
     tune_option = auto_scheduler.TuningOptions(
-        num_measure_trials=args.num_measure_trials,  # change this to 20000 to achieve the best performance
+        num_measure_trials=300,  # change this to 20000 to achieve the best performance
         runner=measure_ctx.runner,
         measure_callbacks=[auto_scheduler.RecordToFile(log_file)],
     )
 
-    tuner.tune(tune_option, search_policy_params={'ablated_rule_names' : args.ablated_rules})
+    tuner.tune(tune_option)
 
 
 # We do not run the tuning in our webpage server since it takes too long.
@@ -326,7 +281,7 @@ with auto_scheduler.ApplyHistoryBest(log_file):
         lib = relay.build(mod, target=target, params=params)
 
 # Create graph executor
-dev = tvm.device(str(target), args.device_id)
+dev = tvm.device(str(target), 7)
 module = graph_executor.GraphModule(lib["default"](dev))
 data_tvm = tvm.nd.array((np.random.uniform(size=input_shape)).astype(dtype))
 module.set_input("data", data_tvm)
