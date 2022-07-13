@@ -17,15 +17,17 @@
 # pylint: disable=missing-docstring
 import logging
 import tempfile
+import numpy as np
 
 import pytest
 import tvm
-from tvm.meta_schedule import ReplayTraceConfig, schedule_rule, tune_tir
-from tvm.meta_schedule.space_generator import PostOrderApply
-from tvm.meta_schedule.testing import te_workload
+
+from tvm import meta_schedule as ms
+from tvm.meta_schedule import TuneConfig, tune_tir
+from tvm.meta_schedule.testing.custom_builder_runner import run_module_via_rpc
+from tvm.meta_schedule.testing.local_rpc import LocalRPC
 from tvm.script import tir as T
-from tvm.target.target import Target
-from tvm.te.operation import create_prim_func
+from tvm.target import Target
 from tvm.tir import Schedule
 
 logging.basicConfig()
@@ -57,7 +59,8 @@ def test_tune_matmul_cpu():
         sch: Schedule = tune_tir(
             mod=matmul,
             target=Target("llvm --num-cores=16"),
-            config=ReplayTraceConfig(
+            config=TuneConfig(
+                strategy="replay_trace",
                 num_trials_per_iter=32,
                 max_trials_per_task=32,
                 max_trials_global=32,
@@ -77,7 +80,8 @@ def test_tune_matmul_cuda():
         sch: Schedule = tune_tir(
             mod=matmul,
             target=Target("nvidia/geforce-rtx-3070"),
-            config=ReplayTraceConfig(
+            config=TuneConfig(
+                strategy="replay_trace",
                 num_trials_per_iter=32,
                 max_trials_per_task=32,
                 max_trials_global=32,
@@ -91,6 +95,49 @@ def test_tune_matmul_cuda():
             print(sch.trace)
 
 
+def test_tune_run_module_via_rpc():
+    target = tvm.target.Target("llvm")
+    rt_mod = tvm.build(matmul, target)
+
+    # construct the input
+    input_data = {}
+    input_shape = (128, 128)
+    input_dtype = "float32"
+    a_np = np.random.uniform(size=input_shape).astype(input_dtype)
+    b_np = np.random.uniform(size=input_shape).astype(input_dtype)
+    c_np = np.zeros(input_shape).astype(input_dtype)
+    for i in range(128):
+        for j in range(128):
+            for k in range(128):
+                c_np[i, j] = c_np[i, j] + a_np[i, k] * b_np[j, k]
+    input_data["a"] = a_np
+    input_data["b"] = b_np
+    input_data["c"] = np.zeros(input_shape).astype(input_dtype)
+
+    with LocalRPC() as rpc:
+        rpc_config = ms.runner.RPCConfig(
+            tracker_host=rpc.tracker_host,
+            tracker_port=rpc.tracker_port,
+            tracker_key=rpc.tracker_key,
+            session_priority=1,
+            session_timeout_sec=100,
+        )
+
+        def f_timer(rt_mod, dev, input_data):
+            rt_mod(input_data["a"], input_data["b"], input_data["c"])
+            return input_data["c"]
+
+        result = run_module_via_rpc(
+            rpc_config=rpc_config,
+            lib=rt_mod,
+            dev_type=target.kind.name,
+            args=input_data,
+            continuation=f_timer,
+        )
+        tvm.testing.assert_allclose(result.numpy(), c_np, rtol=1e-3)
+
+
 if __name__ == """__main__""":
     test_tune_matmul_cpu()
     test_tune_matmul_cuda()
+    test_tune_run_module_via_rpc()

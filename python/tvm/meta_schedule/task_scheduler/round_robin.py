@@ -16,6 +16,7 @@
 # under the License.
 """Round Robin Task Scheduler"""
 
+import logging
 from typing import TYPE_CHECKING, List, Optional
 
 from tvm._ffi import register_object
@@ -26,10 +27,13 @@ from ..builder import Builder
 from ..cost_model import CostModel
 from ..database import Database
 from ..runner import Runner
+from ..utils import make_logging_func
 from .task_scheduler import TaskScheduler
 
 if TYPE_CHECKING:
     from ..tune_context import TuneContext
+
+logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
 @register_object("meta_schedule.RoundRobin")
@@ -53,12 +57,14 @@ class RoundRobin(TaskScheduler):
     def __init__(
         self,
         tasks: List["TuneContext"],
+        task_weights: List[float],
         builder: Builder,
         runner: Runner,
+        *,
         database: Database,
-        max_trials: int,
         cost_model: Optional[CostModel] = None,
         measure_callbacks: Optional[List[MeasureCallback]] = None,
+        max_trials: int,
     ) -> None:
         """Constructor.
 
@@ -66,26 +72,30 @@ class RoundRobin(TaskScheduler):
         ----------
         tasks : List[TuneContext]
             List of tasks to schedule.
+        task_weights : List[float]
+            List of weights for each task. Not used in round robin.
         builder : Builder
             The builder.
         runner : Runner
             The runner.
         database : Database
             The database.
-        max_trials : int
-            The maximum number of trials.
         cost_model : Optional[CostModel]
             The cost model.
         measure_callbacks: Optional[List[MeasureCallback]]
             The list of measure callbacks of the scheduler.
+        max_trials : int
+            The maximum number of trials.
         """
+        del task_weights
         self.__init_handle_by_constructor__(
             _ffi_api.TaskSchedulerRoundRobin,  # type: ignore # pylint: disable=no-member
             tasks,
             builder,
             runner,
             database,
-            max_trials,
             cost_model,
             measure_callbacks,
+            max_trials,
+            make_logging_func(logger),
         )

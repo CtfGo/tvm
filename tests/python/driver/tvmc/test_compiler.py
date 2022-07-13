@@ -25,7 +25,7 @@ import pytest
 
 import tvm
 import tvm.testing
-from tvm.testing.utils import ethosn_available
+from tvm.relay.op.contrib.ethosn import ethosn_available
 from tvm.relay.backend import Runtime, Executor
 
 from tvm.contrib.target.vitis_ai import vitis_ai_available
@@ -378,24 +378,6 @@ def test_compile_opencl(tflite_mobilenet_v1_0_25_128):
     assert os.path.exists(dumps_path)
 
 
-@pytest.mark.skipif(
-    not ethosn_available(),
-    reason="--target=Ethos(TM)-N78 is not available. TVM built with 'USE_ETHOSN OFF'",
-)
-def test_compile_tflite_module_with_external_codegen_ethos_n77(tflite_mobilenet_v1_1_quant):
-    pytest.importorskip("tflite")
-    tvmc_model = tvmc.load(tflite_mobilenet_v1_1_quant)
-    tvmc_package = tvmc.compile(tvmc_model, target="ethos-n77, llvm", dump_code="relay")
-    dumps_path = tvmc_package.package_path + ".relay"
-
-    # check for output types
-    assert type(tvmc_package) is TVMCPackage
-    assert type(tvmc_package.graph) is str
-    assert type(tvmc_package.lib_path) is str
-    assert type(tvmc_package.params) is bytearray
-    assert os.path.exists(dumps_path)
-
-
 @tvm.testing.requires_cmsisnn
 def test_compile_tflite_module_with_external_codegen_cmsisnn(
     tmpdir_factory, tflite_cnn_s_quantized
@@ -427,19 +409,14 @@ def test_compile_tflite_module_with_external_codegen_cmsisnn(
             for name in mlf_package.getnames()
             if re.match(r"\./codegen/host/src/\D+\d+\.c", name)
         ]
-        assert len(c_source_files) == 3
+        assert len(c_source_files) == 4
 
 
-@pytest.mark.skipif(
-    not ethosn_available(),
-    reason="--target=Ethos(TM)-N78 is not available. TVM built with 'USE_ETHOSN OFF'",
-)
+@tvm.testing.requires_ethosn
 def test_compile_tflite_module_with_external_codegen_ethos_n78(tflite_mobilenet_v1_1_quant):
     pytest.importorskip("tflite")
     tvmc_model = tvmc.load(tflite_mobilenet_v1_1_quant)
-    tvmc_package = tvmc.compile(
-        tvmc_model, target="ethos-n78 -variant=ethos-n78, llvm", dump_code="relay"
-    )
+    tvmc_package = tvmc.compile(tvmc_model, target="ethos-n -variant=n78, llvm", dump_code="relay")
     dumps_path = tvmc_package.package_path + ".relay"
 
     # check for output types
@@ -450,10 +427,7 @@ def test_compile_tflite_module_with_external_codegen_ethos_n78(tflite_mobilenet_
     assert os.path.exists(dumps_path)
 
 
-@pytest.mark.skipif(
-    not vitis_ai_available(),
-    reason="--target=vitis-ai is not available. TVM built with 'USE_VITIS_AI OFF'",
-)
+@tvm.testing.requires_vitis_ai
 def test_compile_tflite_module_with_external_codegen_vitis_ai(tflite_mobilenet_v1_1_quant):
     pytest.importorskip("tflite")
 
@@ -510,8 +484,8 @@ def test_compile_tflite_module_with_external_codegen_ethosu(
             # The number of c_source_files depends on the number of fused subgraphs that
             # get offloaded to the NPU, e.g. conv2d->depthwise_conv2d->conv2d gets offloaded
             # as a single subgraph if both of these operators are supported by the NPU.
-            # Currently there are two source files for CPU execution and one offload graph
-            assert len(c_source_files) == 3
+            # Currently there are three source files for CPU execution and one offload graph
+            assert len(c_source_files) == 4
 
 
 @mock.patch("tvm.relay.build")
@@ -552,7 +526,153 @@ def test_compile_check_configs_composite_target(mock_pkg, mock_pc, mock_fe, mock
     )
 
 
-if __name__ == "__main__":
-    import sys
+def test_compile_tflite_module_with_mod_name(tmpdir_factory, tflite_cnn_s_quantized):
+    pytest.importorskip("tflite")
 
-    sys.exit(pytest.main([__file__] + sys.argv[1:]))
+    output_dir = tmpdir_factory.mktemp("mlf")
+    tvmc_model = tvmc.load(tflite_cnn_s_quantized)
+
+    output_file_name = f"{output_dir}/file.tar"
+
+    tvmc.compiler.compile_model(
+        tvmc_model,
+        target=f"c -mcpu=cortex-m55",
+        runtime=Runtime("crt", {"system-lib": True}),
+        executor=Executor("aot"),
+        output_format="mlf",
+        package_path=output_file_name,
+        pass_context_configs=["tir.disable_vectorize=true"],
+        mod_name="classify",
+    )
+
+    # check that an MLF package was created
+    assert os.path.exists(output_file_name)
+
+    with tarfile.open(output_file_name) as mlf_package:
+        # check that the C source files have been named classify_lib*.c
+        c_source_files = [
+            name
+            for name in mlf_package.getnames()
+            if re.match(r"\./codegen/host/src/classify_lib\d+\.c", name)
+        ]
+        assert len(c_source_files) > 0
+
+        # check that "default" doesn't occur in any of the C source files
+        # check that function names are of the form "tvmgen_classify_*"
+        for file_name in c_source_files:
+            with mlf_package.extractfile(file_name) as f:
+                content = f.read()
+                assert b"default" not in content
+                assert b"tvmgen_classify_" in content
+
+        # check that tvmgen_classify_run() function exists
+        with mlf_package.extractfile("./codegen/host/src/classify_lib0.c") as f:
+            content = f.read()
+            assert b"tvmgen_classify_run(" in content
+
+
+@tvm.testing.requires_cmsisnn
+def test_compile_tflite_module_with_mod_name_and_cmsisnn(tmpdir_factory, tflite_cnn_s_quantized):
+    pytest.importorskip("tflite")
+
+    output_dir = tmpdir_factory.mktemp("mlf")
+    tvmc_model = tvmc.load(tflite_cnn_s_quantized)
+
+    output_file_name = f"{output_dir}/file.tar"
+
+    tvmc.compiler.compile_model(
+        tvmc_model,
+        target=f"cmsis-nn, c -mcpu=cortex-m55",
+        runtime=Runtime("crt", {"system-lib": True}),
+        executor=Executor("aot"),
+        output_format="mlf",
+        package_path=output_file_name,
+        pass_context_configs=["tir.disable_vectorize=true"],
+        mod_name="classify",
+    )
+
+    # check that an MLF package was created
+    assert os.path.exists(output_file_name)
+
+    with tarfile.open(output_file_name) as mlf_package:
+        # check that the C source files have been named classify_lib*.c
+        c_source_files = [
+            name
+            for name in mlf_package.getnames()
+            if re.match(r"\./codegen/host/src/classify_lib\d+\.c", name)
+        ]
+        assert len(c_source_files) > 0
+
+        # check that "default" doesn't occur in any of the C source files
+        # check that function names are of the form "tvmgen_classify_*"
+        for file_name in c_source_files:
+            with mlf_package.extractfile(file_name) as f:
+                content = f.read()
+                assert b"default" not in content
+                assert b"tvmgen_classify_" in content
+
+        # check that tvmgen_classify_run() function exists
+        with mlf_package.extractfile("./codegen/host/src/classify_lib0.c") as f:
+            content = f.read()
+            assert b"tvmgen_classify_run(" in content
+
+        # check that CMSIS-NN function names are of the form "tvmgen_classify_cmsis_nn_main_*"
+        with mlf_package.extractfile("./codegen/host/src/classify_lib2.c") as f:
+            content = f.read()
+            assert b"tvmgen_classify_cmsis_nn_main_" in content
+
+
+def test_compile_tflite_module_with_mod_name_and_ethosu(
+    tmpdir_factory, tflite_mobilenet_v1_1_quant
+):
+    pytest.importorskip("tflite")
+    pytest.importorskip("ethosu.vela")
+
+    output_dir = tmpdir_factory.mktemp("mlf")
+    tvmc_model = tvmc.load(tflite_mobilenet_v1_1_quant)
+    output_file_name = f"{output_dir}/file.tar"
+
+    tvmc.compiler.compile_model(
+        tvmc_model,
+        target=f"ethos-u -accelerator_config=ethos-u55-256, c -mcpu=cortex-m55",
+        runtime=Runtime("crt"),
+        executor=Executor("aot", {"unpacked-api": True}),
+        output_format="mlf",
+        package_path=output_file_name,
+        pass_context_configs=["tir.disable_vectorize=true"],
+        mod_name="classify",
+    )
+
+    # check that an MLF package was created
+    assert os.path.exists(output_file_name)
+
+    with tarfile.open(output_file_name) as mlf_package:
+        # check that the C source files have been named classify_lib*.c
+        c_source_files = [
+            name
+            for name in mlf_package.getnames()
+            if re.match(r"\./codegen/host/src/classify_lib\d+\.c", name)
+        ]
+        assert len(c_source_files) > 0
+
+        # check that "default" doesn't occur in any of the C source files
+        # check that function names are of the form "tvmgen_classify_*"
+        for file_name in c_source_files:
+            with mlf_package.extractfile(file_name) as f:
+                content = f.read()
+                assert b"default" not in content
+                assert b"tvmgen_classify_" in content
+
+        # check that tvmgen_classify_run() function exists
+        with mlf_package.extractfile("./codegen/host/src/classify_lib0.c") as f:
+            content = f.read()
+            assert b"tvmgen_classify_run(" in content
+
+        # check that microNPU function names are of the form "tvmgen_classify_ethos_u_main_*"
+        with mlf_package.extractfile("./codegen/host/src/classify_lib2.c") as f:
+            content = f.read()
+            assert b"tvmgen_classify_ethos_u_main_" in content
+
+
+if __name__ == "__main__":
+    tvm.testing.main()

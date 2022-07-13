@@ -18,3 +18,6 @@
 """Intrinsics for tensorization."""
 from .x86 import *
 from .arm_cpu import *
+from .dot_product_common import *
+from .rocm import *
+from .cuda import *
