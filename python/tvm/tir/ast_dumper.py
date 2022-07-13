@@ -31,8 +31,7 @@ def get_valid_fields(stmt_or_expr):
 
 def match(fields, child):
     for key, value in fields.items():
-        if value is child:
-        #if str(value) == str(child):
+        if str(value) == str(child):
             return key
     return "None"
 
@@ -41,12 +40,12 @@ def dump(stmt, filename="graph.txt"):
     ast_node = []
     ast_edge = []
     count = [0]
-    idx2obj = {}
+    #idx2obj = {}
 
     def pre_func(stmt):
         node_idx = count[0]
         count[0] += 1
-        idx2obj[node_idx] = (stmt, get_valid_fields(stmt))
+        #idx2obj[node_idx] = (stmt, get_valid_fields(stmt))
 
         ast_node.append([node_idx, stmt])
         if len(stack):
@@ -69,5 +68,6 @@ def dump(stmt, filename="graph.txt"):
             f.write("[label=\"%s\n%s\"]" % (ast_type, ast_str))
             f.write(";\n")
         for edge in ast_edge:
-            f.write("    node%d -> node%d [label=\"%s\"];\n" % (edge[0], edge[1], match(idx2obj[edge[0]][1], idx2obj[edge[1]][0])))
+            #f.write("    node%d -> node%d [label=\"%s\"];\n" % (edge[0], edge[1], match(idx2obj[edge[0]][1], idx2obj[edge[1]][0])))
+            f.write("    node%d -> node%d;\n" % (edge[0], edge[1]))
         f.write("}\n")
