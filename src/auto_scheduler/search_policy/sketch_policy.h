@@ -85,6 +85,8 @@ struct SketchParamKey {
   static constexpr const char* max_vectorize_size = "max_vectorize_size";
   /*! \brief Whether disable compute location changing. */
   static constexpr const char* disable_change_compute_location = "disable_change_compute_location";
+  /*! \brief The list of rules to be ablated */
+  static constexpr const char* ablated_rule_names = "ablated_rule_names";
 };
 
 class SketchPolicy;
