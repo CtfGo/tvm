@@ -598,6 +598,45 @@ void PostOrderVisit(const ObjectRef& node, std::function<void(const ObjectRef&)>
   }
 }
 
+// Implementations of Dump ast
+class IRAstDumper : public StmtExprVisitor {
+ public:
+  explicit IRAstDumper(std::function<void(const ObjectRef&)> f,
+                       std::function<void(const ObjectRef&)> b) : f_(f), b_(b) {}
+
+  void VisitExpr(const PrimExpr& node) final {
+    if (visited_.count(node.get()) != 0) return;
+    visited_.insert(node.get());
+    f_(node);
+    ExprVisitor::VisitExpr(node);
+    b_(node);
+  }
+
+  void VisitStmt(const Stmt& node) final {
+    if (visited_.count(node.get()) != 0) return;
+    visited_.insert(node.get());
+    f_(node);
+    StmtVisitor::VisitStmt(node);
+    b_(node);
+  }
+
+ private:
+  std::function<void(const ObjectRef&)> f_, b_;
+  std::unordered_set<const Object*> visited_;
+};
+
+void PrePostOrderVisit(const ObjectRef& node, 
+                       std::function<void(const ObjectRef&)> fvisit,
+                       std::function<void(const ObjectRef&)> bvisit) {
+  if (node.as<StmtNode>()) {
+    IRAstDumper visitor(fvisit, bvisit);
+    visitor(Downcast<Stmt>(node));
+  } else {
+    IRAstDumper visitor(fvisit, bvisit);
+    visitor(Downcast<PrimExpr>(node));
+  }
+}
+
 class IRTransformer final : public StmtExprMutator {
  public:
   IRTransformer(const runtime::PackedFunc& f_preorder, const runtime::PackedFunc& f_postorder,
@@ -905,6 +944,10 @@ TVM_REGISTER_GLOBAL("tir.IRTransform").set_body_typed(IRTransform);
 
 TVM_REGISTER_GLOBAL("tir.PostOrderVisit").set_body_typed([](ObjectRef node, PackedFunc f) {
   tir::PostOrderVisit(node, [f](const ObjectRef& n) { f(n); });
+});
+
+TVM_REGISTER_GLOBAL("tir.PrePostOrderVisit").set_body_typed([](ObjectRef node, PackedFunc f, PackedFunc b) {
+  tir::PrePostOrderVisit(node, [f](const ObjectRef& n) { f(n); }, [b](const ObjectRef& n) { b(n); });
 });
 
 TVM_REGISTER_GLOBAL("tir.PreOrderVisit").set_body_typed([](ObjectRef node, PackedFunc f) {
